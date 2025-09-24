@@ -41,3 +41,4 @@ streamlit run 04_app.py
 
 ## 使い方
 ![アプリ操作手順](assets/app_ui_annotated.png)
+[画像を開く](assets/app_ui_annotated.png)
