@@ -7,7 +7,7 @@
 
 ## 依存パッケージ（requirements）
 本プロジェクトで使用する主な外部ライブラリは `requirements.txt` に記載しています。  
-（Keras/TensorFlow は最終不採用のため分離。必要な方は `requirements-keras.txt` を参照）
+（Keras/TensorFlow は最終不採用のため未記載。）
 
 ## ディレクトリ構成
 ├── 02_horse_preprocess_submission.ipynb   # 前処理・特徴量生成<br>
@@ -40,6 +40,6 @@ pip install -r requirements.txt
 streamlit run 04_app.py
 
 ## 使い方
-![アプリ操作手順](./assets/app_ui_annotated.png)
+![アプリ操作手順](assets/app_ui_annotated.png)
 
 
