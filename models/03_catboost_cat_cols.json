@@ -1,0 +1,12 @@
+{
+  "categorical_features": [
+    "騎手",
+    "調教師",
+    "weather",
+    "race_type",
+    "ground_state",
+    "競馬場",
+    "所属",
+    "性"
+  ]
+}
