@@ -4,6 +4,7 @@ from bs4 import BeautifulSoup
 import numpy as np
 import logging
 import unicodedata
+from pathlib import Path
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
@@ -12,7 +13,8 @@ HDRS = {
     "Accept-Language": "ja,en;q=0.9",
 }
 
-results_df = pd.read_pickle("02_results_df.pickle")  # 学習時の結果データ
+BASE_DIR = Path(__file__).resolve().parent
+results_df = pd.read_pickle(BASE_DIR / "data" / "02_results_df.pickle")
 
 # =========================================================
 # ===================== スクレイピング =====================
@@ -273,7 +275,7 @@ def fetch_jra_shutuba(
                     .transform(lambda s: s.shift().expanding(min_periods=3).mean())
             )
 
-        # コンビ（任意だが学習列にあるなら作る）
+        # コンビ
         if "__jockey_key__" in hist.columns and "__trainer_key__" in hist.columns:
             hist["コンビ_直近50走_複勝率"] = (
                 hist.groupby(["__jockey_key__","__trainer_key__"])["複勝フラグ"]
@@ -351,8 +353,6 @@ def fetch_jra_shutuba(
             df[c] = defaults[c]
         else:
             df[c] = df[c].fillna(defaults[c])
-
-    # ===== 最後に必ず返す =====
     return df
 
 
@@ -424,10 +424,7 @@ def prepare_history_by_name(results_df_raw: pd.DataFrame) -> pd.DataFrame:
 # =========================================================
 
 # ====必要ライブラリ ====
-import os, re, json, unicodedata, math, logging
-from pathlib import Path
-import numpy as np
-import pandas as pd
+import os, json, unicodedata
 import requests
 from bs4 import BeautifulSoup
 
@@ -435,10 +432,11 @@ from bs4 import BeautifulSoup
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
 # ====モデル/特徴量ファイルのパス ====
-MODEL_LGBM_PATH = Path("03_lgbm_nativecat_odds_tuned.joblib")      # LightGBM学習済みモデル
-MODEL_CAT_PATH  = Path("03_catboost_odds_features.cbm")       # CatBoost学習済みモデル
-LGBM_FEATS_JSON = Path("03_lgbm_feature_cols.json")  # あれば使う
-CAT_FEATS_JSON  = Path("03_catboost_feature_cols.json")  # あれば使う
+MODEL_DIR = BASE_DIR / "models"
+LGBM_PATH = MODEL_DIR / "03_lgbm_nativecat_odds_tuned.joblib"
+CAT_PATH  = MODEL_DIR / "03_catboost_odds_features.cbm"
+CAT_COLS_JSON   = MODEL_DIR / "03_catboost_cat_cols.json"
+LGBM_LEVELS_JSON= MODEL_DIR / "03_lgbm_cat_levels.json"
 
 # ====HTTPヘッダ ====
 HDRS = {
@@ -487,7 +485,6 @@ def load_feature_and_cats(json_path: Path, fallback_feats: list[str], fallback_c
     return feats, cats
 
 def parse_month_from_url(url: str) -> float | int | None:
-    # 末尾に YYYYMMDD が含まれているケース（例: ...20250830）
     m = re.search(r"(20\d{6})", url)
     if not m:
         return None
@@ -596,11 +593,11 @@ def prepare_features(df_raw: pd.DataFrame,
         mm = parse_month_from_url(src_url)
         df['月'] = float(mm) if mm is not None else np.nan
 
-    # LGBM: “数値は数値”、カテゴリ予定列は “一旦string” にしておく（後でobjectへ）
+    # LGBM: “数値は数値”、カテゴリ予定列は “一旦string” に
     X_lgbm_native = ensure_feature_frame(df, feats_for_lgbm, [])
     for c in X_lgbm_native.columns:
         if c in cat_cols_lgbm:
-            X_lgbm_native[c] = X_lgbm_native[c].astype('string')  # ←ここ重要
+            X_lgbm_native[c] = X_lgbm_native[c].astype('string')
         else:
             X_lgbm_native[c] = pd.to_numeric(X_lgbm_native[c], errors='coerce')
     X_lgbm_native = X_lgbm_native.replace([np.inf, -np.inf], np.nan)
@@ -694,7 +691,6 @@ def _enforce_numeric_except_cats(X: pd.DataFrame, cats: list[str]) -> pd.DataFra
     for c in non_cats:
         # 文字列やobjectが混ざっていても数値化。失敗は NaN
         X[c] = pd.to_numeric(X[c], errors="coerce")
-    # ついでに inf を NaN へ
     X = X.replace([np.inf, -np.inf], np.nan)
     return X
 
@@ -708,7 +704,7 @@ def save_catboost_features_atomic(path: Path, features: list[str], cats_eff: lis
     with tempfile.NamedTemporaryFile("w", encoding="utf-8", delete=False, dir=str(path.parent)) as f:
         json.dump(payload, f, ensure_ascii=False, indent=2)
         tmp_name = f.name
-    os.replace(tmp_name, path)  # 原子的に置換
+    os.replace(tmp_name, path)
     logging.info(f"cats_eff saved -> {path} (cats={cats_eff})")
     
 LGBM_CAT_COLS = ['騎手','調教師','所属','性','競馬場','weather','race_type','ground_state']
@@ -726,7 +722,7 @@ def apply_lgbm_cat_levels(X: pd.DataFrame, levels: dict[str, list[str]]) -> pd.D
         if c not in X.columns: 
             continue
         lv = levels.get(c)
-        # まず string 化（ここで NFKC とトリムも後述の正規化でやる）
+        # まず string 化
         s = X[c].astype("string")
         if lv is not None:
             # 学習時と完全一致の dtype を付与（未知値は NaN になる）
@@ -825,7 +821,7 @@ def log_category_diff(X: pd.DataFrame, model_cat_map: dict[str, list[str]], lgbm
 def _sync_booster_pandas_categories(lgbm, X: pd.DataFrame):
     # 今の入力で category dtype の列を拾う（順序は X の列順）
     cat_cols_current = [c for c in X.columns if str(X[c].dtype) == "category"]
-    # その列ごとのカテゴリ配列を Booster へ渡す（len が cat 列数と一致する必要）
+    # その列ごとのカテゴリ配列を Booster へ渡す
     pc = [list(X[c].cat.categories.astype(str)) for c in cat_cols_current]
     lgbm.booster_.pandas_categorical = pc
     
@@ -952,7 +948,7 @@ def predict_from_url(
             X_lgbm_native[c] = pd.to_numeric(X_lgbm_native[c], errors="coerce")
     X_lgbm_native = X_lgbm_native.replace([np.inf, -np.inf], np.nan)
 
-    # ログ（任意）
+    # ログ
     log_category_diff(X_lgbm_native, model_cat_map, LGBM_CAT_COLS)
 
     _sync_booster_pandas_categories(lgbm, X_lgbm_native)
@@ -1002,7 +998,7 @@ def predict_from_url(
         X_cat_cur, pool = _make_pool_for_cat(X_cat, cats_eff)
         try:
             proba_cat = cat.predict_proba(pool)
-            break  # 成功！
+            break
         except CatBoostError as e:
             msg = str(e)
             m = re.search(r'Feature\s+(.+?)\s+is\s+(Categorical|Float)\s+in model', msg)
@@ -1029,7 +1025,6 @@ def predict_from_url(
             if np.asarray(proba_cat).ndim > 1
             else np.asarray(cat.predict(pool)).reshape(-1))
 
-    # ✅ 最後に保存（原子的置換で安全に）
     save_catboost_features_atomic(
         CAT_FEATS_JSON,
         features=list(X_cat.columns),
@@ -1317,4 +1312,5 @@ if go and url.strip():
         st.dataframe(df_pred, use_container_width=True, hide_index=True)
 
 else:
+
     st.stop()
