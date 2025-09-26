@@ -1,7 +1,8 @@
 # keiba-highpayout-multiple-checker
 
 [![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://<あなたのサブドメイン>.streamlit.app)
-**Live Demo:** https://keiba-highpayout-multiple-checker-9sz9d82uhpu7rhywkypo2r.streamlit.app/
+**Live Demo:**  
+https://keiba-highpayout-multiple-checker-9sz9d82uhpu7rhywkypo2r.streamlit.app/
 
 ## 概要
 - 目的 : [netkeiba](https://www.netkeiba.com/) からスクレイピングした 2023–2024 年のレースデータを用い、レース毎に **複勝配当率 上位15%** に入る馬（`HighPayoutHorse`）を予測
